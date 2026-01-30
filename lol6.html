@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>APEX PARTICLE ENGINE — GOD MODE</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@300;700&display=swap" rel="stylesheet">
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  background:#000;
+  font-family:Orbitron,system-ui;
+}
+#ui{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(0,40,60,.25), transparent 60%),
+    radial-gradient(circle at 70% 60%, rgba(40,0,60,.15), transparent 65%);
+}
+#label{
+  position:absolute;
+  top:28px;
+  left:32px;
+  border-left:2px solid #00f2ff;
+  padding-left:14px;
+}
+#label h1{
+  margin:0;
+  font-size:1.4rem;
+  letter-spacing:4px;
+  font-weight:300;
+  color:#7df9ff;
+  text-shadow:0 0 16px #00f2ff;
+}
+#label p{
+  margin:.3rem 0 0;
+  font-size:.7rem;
+  opacity:.6;
+}
+#log{
+  position:absolute;
+  bottom:20px;
+  right:24px;
+  font-size:10px;
+  opacity:.45;
+}
+video{display:none}
+</style>
+
+<script type="importmap">
+{
+ "imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+ }
+}
+</script>
+</head>
+
+<body>
+<div id="ui">
+  <div id="label">
+    <h1>APEX PARTICLE ENGINE</h1>
+    <p>MULTIVERSE | GOD MODE</p>
+  </div>
+  <div id="log">Neural Field Syncing…</div>
+</div>
+
+<video id="input-video" playsinline></video>
+
+<script type="module">
+import * as THREE from 'three'
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js'
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js'
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js'
+
+/* ===== CORE STATE (UNTOUCHED LOGIC) ===== */
+const MP_URL="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915"
+let handX=0,handY=0,isPinching=false,isFist=false,handSpeed=0
+let lastHand=new THREE.Vector2()
+
+/* ===== SCENE ===== */
+const scene=new THREE.Scene()
+scene.fog=new THREE.FogExp2(0x05080f,.045)
+
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,1000)
+camera.position.z=10
+
+const renderer=new THREE.WebGLRenderer({antialias:false})
+renderer.setSize(innerWidth,innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+/* ===== POST ===== */
+const composer=new EffectComposer(renderer)
+composer.addPass(new RenderPass(scene,camera))
+const bloom=new UnrealBloomPass(
+  new THREE.Vector2(innerWidth,innerHeight),
+  1.8,.55,.75
+)
+composer.addPass(bloom)
+
+/* ===== SHADERS (EXTENDED VISUAL ONLY) ===== */
+const vShader=`
+uniform float uTime,uMorph,uVortex,uFreeze;
+uniform vec3 uHand;
+attribute vec3 aTarget;
+varying float vD;
+void main(){
+ vec3 p=mix(position,aTarget,uMorph);
+ float a=uTime*uVortex*(3.-length(p));
+ p.xz*=mat2(cos(a),-sin(a),sin(a),cos(a));
+ p+=uHand;
+ vec4 mv=modelViewMatrix*vec4(p,1.);
+ gl_PointSize=22./-mv.z;
+ gl_Position=projectionMatrix*mv;
+ vD=length(p);
+}
+`
+const fShader=`
+uniform vec3 uColor;
+uniform float uPulse;
+varying float vD;
+void main(){
+ vec2 c=gl_PointCoord-.5;
+ float d=dot(c,c);
+ if(d>.25) discard;
+ float g=exp(-d*18.);
+ gl_FragColor=vec4(uColor*g*(1.3-vD*.08)*(1.+uPulse),1.);
+}
+`
+
+/* ===== GEOMETRY ===== */
+const COUNT=14000
+const geo=new THREE.BufferGeometry()
+const p1=new Float32Array(COUNT*3)
+const p2=new Float32Array(COUNT*3)
+
+for(let i=0;i<COUNT;i++){
+ let i3=i*3
+ let t=Math.random()*Math.PI*2
+ p1[i3]=Math.cos(t)*(2+Math.random()*2)
+ p1[i3+1]=(Math.random()-.5)*2
+ p1[i3+2]=Math.sin(t)*(2+Math.random()*2)
+
+ p2[i3]=.2*(16*Math.pow(Math.sin(t),3))
+ p2[i3+1]=.2*(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t))
+ p2[i3+2]=(Math.random()-.5)*1.2
+}
+geo.setAttribute('position',new THREE.BufferAttribute(p1,3))
+geo.setAttribute('aTarget',new THREE.BufferAttribute(p2,3))
+
+/* ===== MULTIVERSE CLONES ===== */
+const universes=[]
+for(let i=0;i<3;i++){
+ const uniforms={
+  uTime:{value:0},
+  uMorph:{value:0},
+  uVortex:{value:1},
+  uFreeze:{value:0},
+  uPulse:{value:0},
+  uHand:{value:new THREE.Vector3()},
+  uColor:{value:new THREE.Color().setHSL(.55+.1*i,.9,.6)}
+ }
+ const mat=new THREE.ShaderMaterial({
+  uniforms,vertexShader:vShader,fragmentShader:fShader,
+  blending:THREE.AdditiveBlending,transparent:true,depthWrite:false
+ })
+ const pts=new THREE.Points(geo,mat)
+ pts.rotation.y=i*1.7
+ pts.rotation.x=i*.6
+ scene.add(pts)
+ universes.push({pts,uniforms})
+}
+
+/* ===== HAND AI (UNTOUCHED) ===== */
+async function setupAI(){
+ const hands=new window.Hands({locateFile:f=>`${MP_URL}/${f}`})
+ hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.6})
+ hands.onResults(r=>{
+  if(!r.multiHandLandmarks) return
+  const lm=r.multiHandLandmarks[0]
+  handX=(lm[9].x-.5)*-18
+  handY=(lm[9].y-.5)*-18
+  const v=new THREE.Vector2(lm[9].x,lm[9].y)
+  handSpeed=v.distanceTo(lastHand); lastHand.copy(v)
+  isPinching=Math.hypot(lm[4].x-lm[8].x,lm[4].y-lm[8].y)<.04
+  const w=lm[0]
+  isFist=[4,8,12,16,20].reduce((a,i)=>a+Math.hypot(lm[i].x-w.x,lm[i].y-w.y),0)<.6
+ })
+ const vid=document.getElementById('input-video')
+ new window.Camera(vid,{onFrame:async()=>hands.send({image:vid})}).start()
+}
+
+/* ===== LOOP ===== */
+function animate(t){
+ requestAnimationFrame(animate)
+ universes.forEach((u,i)=>{
+  u.uniforms.uTime.value=t*.001*(1+i*.15)
+  u.uniforms.uHand.value.x+=(handX-u.uniforms.uHand.value.x)*.12
+  u.uniforms.uHand.value.y+=(handY-u.uniforms.uHand.value.y)*.12
+
+  if(isPinching){
+   u.uniforms.uMorph.value+=.12
+   u.uniforms.uPulse.value=Math.sin(t*.02)*.6
+  }else u.uniforms.uMorph.value*=.9
+
+  if(isFist){
+   u.uniforms.uVortex.value+=.4
+   u.uniforms.uPulse.value=1.5
+  }else u.uniforms.uVortex.value+=(1.5-u.uniforms.uVortex.value)*.08
+
+  u.pts.rotation.y+=.002+handSpeed*.6
+ })
+ camera.position.x+=((handX*.15)-camera.position.x)*.08
+ camera.position.y+=((handY*.15)-camera.position.y)*.08
+ composer.render()
+}
+
+/* ===== BOOT ===== */
+(async()=>{
+ const load=u=>new Promise(r=>{let s=document.createElement('script');s.src=u;s.onload=r;document.head.appendChild(s)})
+ await load(`${MP_URL}/hands.js`)
+ await load("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js")
+ document.getElementById('log').innerText="Neural Field Online."
+ setupAI()
+ animate(0)
+})()
+
+addEventListener('resize',()=>{
+ renderer.setSize(innerWidth,innerHeight)
+ composer.setSize(innerWidth,innerHeight)
+ camera.aspect=innerWidth/innerHeight
+ camera.updateProjectionMatrix()
+})
+</script>
+</body>
+</html>
